@@ -20,7 +20,7 @@ from pathlib import Path
 
 DATA_ROOT = Path("/mnt/nas/lengyue/flash-fish-data/allenai/Dolci-Instruct-SFT")
 AUDIO_DIR = DATA_ROOT / "audio"
-OUTPUT_DIR = DATA_ROOT / "swift_format"
+OUTPUT_DIR = Path("data") / "dolci_instruct_sft_swift_format"
 
 
 def convert_sample(raw: dict) -> dict | None:
@@ -40,22 +40,37 @@ def convert_sample(raw: dict) -> dict | None:
 
     new_messages = []
     audios = []
+    tools = None
     has_valid_assistant = False
 
     for msg_idx, msg in enumerate(messages):
         role = msg["role"]
         content = msg.get("content")
 
+        # Extract function schema from any message's "functions" field (take first found)
+        if tools is None and msg.get("functions"):
+            raw_functions = msg["functions"]
+            if isinstance(raw_functions, str):
+                try:
+                    raw_functions = json.loads(raw_functions)
+                except json.JSONDecodeError as e:
+                    print(f"WARNING: Failed to parse functions for {sample_id}: {e}")
+                    print(f"  raw: {raw_functions[:200]}")
+                    raw_functions = [raw_functions]
+            if isinstance(raw_functions, list):
+                tools = raw_functions
+
         # Case 2a: assistant with content=None (tool call initiation)
         if role == "assistant" and content is None:
             fc = msg.get("function_calls")
             if fc:
+                fc_content = fc if isinstance(fc, str) else json.dumps(fc, ensure_ascii=False)
                 new_messages.append({
                     "role": "assistant",
-                    "content": json.dumps(fc, ensure_ascii=False),
+                    "content": fc_content,
                 })
+                has_valid_assistant = True
             else:
-                # No function_calls and no content → truncated sample, skip this turn
                 new_messages.append({"role": "assistant", "content": ""})
             continue
 
@@ -78,7 +93,7 @@ def convert_sample(raw: dict) -> dict | None:
                 audios.append(str(audio_path))
                 new_messages.append({
                     "role": "user",
-                    "content": f"<audio>{content}" if content else "<audio>",
+                    "content": "<audio>",
                 })
                 continue
 
@@ -91,6 +106,8 @@ def convert_sample(raw: dict) -> dict | None:
     result = {"messages": new_messages}
     if audios:
         result["audios"] = audios
+    if tools:
+        result["tools"] = tools
     return result
 
 
@@ -126,7 +143,7 @@ def process_chunk(args: tuple) -> tuple:
 def main():
     parser = argparse.ArgumentParser(description="Preprocess Dolci-Instruct-SFT for ms-swift")
     parser.add_argument("--split", choices=["train", "test"], default="train")
-    parser.add_argument("--workers", type=int, default=16)
+    parser.add_argument("--workers", type=int, default=128)
     parser.add_argument("--chunk-size", type=int, default=50000,
                         help="Number of lines per chunk for parallel processing")
     args = parser.parse_args()
