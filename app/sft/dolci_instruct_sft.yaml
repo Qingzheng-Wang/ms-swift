@@ -1,0 +1,56 @@
+# Dolci Instruct SFT config (6 nodes × 8 H200)
+# 对齐 flash-fish full-param config
+
+# Model
+model: Qwen/Qwen3-Omni-30B-A3B-Instruct
+torch_dtype: bfloat16
+seed: 2026
+
+# System prompt
+system: "You are a helpful AI assistant that can understand audio and respond in text."
+
+# Dataset
+dataset: /mnt/nas/lengyue/flash-fish-data/allenai/Dolci-Instruct-SFT/train.jsonl
+val_dataset: /mnt/nas/lengyue/flash-fish-data/allenai/Dolci-Instruct-SFT/test.jsonl
+load_from_cache_file: true
+dataset_num_proc: 4
+dataloader_num_workers: 4
+
+# LoRA
+tuner_type: lora
+lora_rank: 8
+lora_alpha: 32
+target_modules: all-linear
+
+# Freeze
+# NOTE: talker/code2wav always frozen by ms-swift
+freeze_vit: true
+freeze_aligner: true
+
+# Training (6 nodes × 8 GPUs = 48 devices)
+num_train_epochs: 2
+per_device_train_batch_size: 8
+per_device_eval_batch_size: 8
+gradient_accumulation_steps: 1
+learning_rate: 5e-5
+warmup_ratio: 0.05
+max_grad_norm: 1.0
+gradient_checkpointing: true
+padding_free: true
+weight_decay: 0.01
+adam_beta2: 0.999
+
+# Attention / MoE
+attn_impl: flash_attn
+experts_impl: grouped_mm
+
+# Logging & Saving
+eval_steps: 1000
+save_steps: 1000
+save_total_limit: 3
+logging_steps: 10
+
+# Misc
+max_length: 32768
+output_dir: output/qwen3-omni-dolci-lora
+deepspeed: zero3
