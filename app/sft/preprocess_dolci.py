@@ -103,6 +103,20 @@ def convert_sample(raw: dict) -> dict | None:
     if not has_valid_assistant:
         return None
 
+    # Merge consecutive tool responses into one
+    merged = []
+    for m in new_messages:
+        if m["role"] == "tool" and merged and merged[-1]["role"] == "tool":
+            merged[-1]["content"] += "\n" + m["content"]
+        else:
+            merged.append(m)
+    new_messages = merged
+
+    # Skip samples where tool follows non-assistant (missing tool-call)
+    for j in range(len(new_messages)):
+        if new_messages[j]["role"] == "tool" and (j == 0 or new_messages[j - 1]["role"] != "assistant"):
+            return None
+
     result = {"messages": new_messages}
     if audios:
         result["audios"] = audios
@@ -117,7 +131,9 @@ def convert_sample(raw: dict) -> dict | None:
 def process_chunk(args: tuple) -> tuple:
     """Process a chunk of lines. Returns (output_path, kept_count, skipped_count)."""
     chunk_idx, lines = args
-    tmp_path = os.path.join(tempfile.gettempdir(), f"dolci_chunk_{chunk_idx}.jsonl")
+    tmp_dir = OUTPUT_DIR / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = str(tmp_dir / f"dolci_chunk_{chunk_idx}.jsonl")
 
     kept = 0
     skipped = 0
@@ -144,9 +160,12 @@ def process_chunk(args: tuple) -> tuple:
 
 
 def main():
+    import os
+    num_cpus = os.cpu_count() or 1
+    print(f"Detected {num_cpus} CPU cores. Defaulting to --workers {num_cpus}.")
     parser = argparse.ArgumentParser(description="Preprocess Dolci-Instruct-SFT for ms-swift")
-    parser.add_argument("--split", choices=["train", "test"], default="test")
-    parser.add_argument("--workers", type=int, default=128)
+    parser.add_argument("--split", choices=["train", "test"], default="train")
+    parser.add_argument("--workers", type=int, default=num_cpus,)
     parser.add_argument("--chunk-size", type=int, default=50000,
                         help="Number of lines per chunk for parallel processing")
     args = parser.parse_args()
