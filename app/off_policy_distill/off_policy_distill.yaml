@@ -1,0 +1,71 @@
+# Off-Policy Distillation (GKD) config
+# Command: swift rlhf --config app/off_policy_distill/off_policy_distill.yaml
+
+rlhf_type: gkd
+report_to: wandb
+
+# Student model
+model: Qwen/Qwen3-Omni-30B-A3B-Instruct
+torch_dtype: bfloat16
+seed: 2026
+
+# Teacher (external vLLM API)
+# Start teacher first: vllm serve Qwen/Qwen3-235B-A22B-Instruct-2507 --port 8000 --max-logprobs 20 --tensor-parallel-size 8
+teacher_model_server: "http://localhost:8000"
+gkd_logits_topk: 20
+
+# GKD hyperparameters
+lmbda: 0            # pure off-policy (use dataset responses)
+seq_kd: false
+beta: 0.5           # JSD divergence
+temperature: 0.9
+
+# System prompt
+system: "You are a helpful AI assistant that can understand audio and respond in text."
+
+# Dataset (preprocessed with preprocess_dolci_distill.py)
+dataset: data/dolci_gkd_swift_format/train.jsonl
+load_from_cache_file: true
+dataset_num_proc: 4
+dataloader_num_workers: 4
+
+# LoRA
+tuner_type: lora
+lora_rank: 8
+lora_alpha: 32
+target_modules: all-linear
+
+# Freeze
+# NOTE: talker/code2wav always frozen by ms-swift
+freeze_vit: true
+freeze_aligner: true
+
+# Training
+num_train_epochs: 2
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 2
+learning_rate: 5e-5
+warmup_ratio: 0.05
+max_grad_norm: 1.0
+gradient_checkpointing: true
+padding_free: false     # disabled for dual-input alignment simplicity
+weight_decay: 0.01
+adam_beta2: 0.999
+
+# Attention / MoE
+attn_impl: flash_attn
+experts_impl: grouped_mm
+
+# Logging & Saving
+eval_strategy: "no"
+save_steps: 500
+save_total_limit: 3
+logging_steps: 10
+
+# Lengths
+max_length: 32768
+max_completion_length: 4096
+
+# Output
+output_dir: output/qwen3-omni-dolci-gkd-lora
+deepspeed: zero3

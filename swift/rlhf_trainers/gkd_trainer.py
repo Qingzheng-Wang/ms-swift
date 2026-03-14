@@ -452,7 +452,18 @@ class GKDTrainer(RolloutTrainerMixin, SwiftMixin, HFGKDTrainer):
 
             # Fetch teacher logprobs from API if using external teacher service
             if self.use_teacher_api:
-                teacher_logprobs, teacher_indices = self._fetch_teacher_logprobs_from_api(encoded_inputs)
+                has_teacher_messages = (data_source == DataSource.DATASET
+                                        and any('teacher_messages' in inp for inp in inputs))
+                if has_teacher_messages:
+                    # Dual-input: encode teacher version (text-only) separately
+                    teacher_inputs = self._build_teacher_inputs(inputs)
+                    with self._template_context(self.template, max_length=total_length):
+                        teacher_encoded = self._prepare_batch_inputs(teacher_inputs, encode_prompt_only=False)
+                    teacher_logprobs, teacher_indices = self._fetch_teacher_logprobs_from_api(teacher_encoded)
+                    teacher_logprobs, teacher_indices = self._align_teacher_logprobs(
+                        encoded_inputs, teacher_encoded, teacher_logprobs, teacher_indices)
+                else:
+                    teacher_logprobs, teacher_indices = self._fetch_teacher_logprobs_from_api(encoded_inputs)
                 encoded_inputs['_teacher_api_logprobs'] = teacher_logprobs
                 encoded_inputs['_teacher_api_indices'] = teacher_indices
 
@@ -471,13 +482,88 @@ class GKDTrainer(RolloutTrainerMixin, SwiftMixin, HFGKDTrainer):
             self.teacher_model_server, input_ids.tolist(), topk=self.gkd_logits_topk)
         return teacher_logprobs.to(input_ids.device), teacher_indices.to(input_ids.device)
 
+    @staticmethod
+    def _build_teacher_inputs(inputs: list) -> list:
+        """Build teacher-specific inputs by replacing messages with teacher_messages.
+
+        For samples without teacher_messages, the original messages are used.
+        Multimodal fields (audios, videos, images) are removed for teacher inputs.
+        """
+        teacher_inputs = []
+        for data in inputs:
+            if 'teacher_messages' in data:
+                t = {k: v for k, v in data.items()
+                     if k not in ('messages', 'audios', 'videos', 'images', 'teacher_messages')}
+                t['messages'] = data['teacher_messages']
+                teacher_inputs.append(t)
+            else:
+                teacher_inputs.append(data)
+        return teacher_inputs
+
+    @staticmethod
+    def _align_teacher_logprobs(student_encoded, teacher_encoded, teacher_logprobs, teacher_indices):
+        """Align teacher logprobs from teacher sequence positions to student sequence positions.
+
+        When teacher and student have different prompt lengths (e.g., text vs audio input),
+        the response tokens are at different absolute positions but are identical in content.
+        This method extracts teacher logprobs at response positions and places them at the
+        corresponding student response positions.
+
+        Args:
+            student_encoded: dict with 'labels' tensor [batch, student_seq_len]
+            teacher_encoded: dict with 'labels' tensor [batch, teacher_seq_len]
+            teacher_logprobs: tensor [batch, teacher_seq_len-1, topk]
+            teacher_indices: tensor [batch, teacher_seq_len-1, topk]
+
+        Returns:
+            Tuple of aligned (logprobs, indices) tensors with shape [batch, student_seq_len-1, topk]
+        """
+        student_labels = student_encoded['labels']
+        teacher_labels = teacher_encoded['labels']
+        batch_size, student_seq_len = student_labels.shape
+        topk = teacher_logprobs.shape[2]
+
+        aligned_lp = torch.full(
+            (batch_size, student_seq_len - 1, topk), float('-inf'),
+            device=teacher_logprobs.device, dtype=teacher_logprobs.dtype)
+        aligned_idx = torch.zeros(
+            (batch_size, student_seq_len - 1, topk),
+            dtype=torch.long, device=teacher_indices.device)
+
+        for b in range(batch_size):
+            # logprobs[i] predicts token at labels[i+1], so mask by shifted labels
+            t_mask = teacher_labels[b, 1:] != -100
+            s_mask = student_labels[b, 1:] != -100
+            n_teacher = t_mask.sum().item()
+            n_student = s_mask.sum().item()
+            n = min(n_teacher, n_student)
+            if n == 0:
+                continue
+
+            # Extract teacher response logprobs and place at student response positions
+            t_resp_lp = teacher_logprobs[b][t_mask][:n]
+            t_resp_idx = teacher_indices[b][t_mask][:n]
+            s_positions = s_mask.nonzero(as_tuple=True)[0][:n]
+            aligned_lp[b, s_positions] = t_resp_lp
+            aligned_idx[b, s_positions] = t_resp_idx
+
+        return aligned_lp, aligned_idx
+
     def prediction_step(self, model, inputs, *args, **kwargs):
         # Prediction uses full messages
         encoded_inputs = self._prepare_batch_inputs(inputs, encode_prompt_only=False)
 
         # Fetch teacher logprobs from API if using external teacher service (for eval)
         if self.use_teacher_api:
-            teacher_logprobs, teacher_indices = self._fetch_teacher_logprobs_from_api(encoded_inputs)
+            has_teacher_messages = any('teacher_messages' in inp for inp in inputs)
+            if has_teacher_messages:
+                teacher_inputs = self._build_teacher_inputs(inputs)
+                teacher_encoded = self._prepare_batch_inputs(teacher_inputs, encode_prompt_only=False)
+                teacher_logprobs, teacher_indices = self._fetch_teacher_logprobs_from_api(teacher_encoded)
+                teacher_logprobs, teacher_indices = self._align_teacher_logprobs(
+                    encoded_inputs, teacher_encoded, teacher_logprobs, teacher_indices)
+            else:
+                teacher_logprobs, teacher_indices = self._fetch_teacher_logprobs_from_api(encoded_inputs)
             encoded_inputs['_teacher_api_logprobs'] = teacher_logprobs
             encoded_inputs['_teacher_api_indices'] = teacher_indices
 
