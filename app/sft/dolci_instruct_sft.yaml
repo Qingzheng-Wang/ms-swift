@@ -1,5 +1,4 @@
 # Dolci Instruct SFT config (6 nodes × 8 H200)
-# 对齐 flash-fish full-param config
 
 # Model
 model: Qwen/Qwen3-Omni-30B-A3B-Instruct
@@ -10,8 +9,8 @@ seed: 2026
 system: "You are a helpful AI assistant that can understand audio and respond in text."
 
 # Dataset
-dataset: /mnt/nas/lengyue/flash-fish-data/allenai/Dolci-Instruct-SFT/train.jsonl
-val_dataset: /mnt/nas/lengyue/flash-fish-data/allenai/Dolci-Instruct-SFT/test.jsonl
+dataset: data/dolci_instruct_sft_swift_format/train.jsonl
+val_dataset: data/dolci_instruct_sft_swift_format/test.jsonl
 load_from_cache_file: true
 dataset_num_proc: 4
 dataloader_num_workers: 4
