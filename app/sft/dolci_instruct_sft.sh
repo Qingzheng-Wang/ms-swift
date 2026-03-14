@@ -10,21 +10,23 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWIFT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$SWIFT_ROOT"
 
+CONFIG_YAML="${SCRIPT_DIR}/dolci_instruct_sft.yaml"
+
 # Job parameters
 config_name="dolci_instruct_sft"
 ngpu=${1:-8}
-nodes=${2:-6}
+nodes=${2:-2}
 wall_time=${3:-96:00:00}
 partition=${4:-"gpu"}
 
-python swift/utils/stool.py \
+python tools/slurm/stool.py \
     --nodes $nodes \
     --ngpu $ngpu \
     --project ${config_name} \
     --time $wall_time \
     --partition $partition \
     --no-auto-inject-cmd \
-    --cmd "swift/cli/sft.py --config ${SCRIPT_DIR}/dolci_instruct_sft.yaml" \
+    --cmd "-m swift.cli.sft --config ${CONFIG_YAML}" \
     --submit \
     --conda-script ~/miniconda3/etc/profile.d/conda.sh \
     --conda-env ~/miniconda3/envs/ms-swift \
