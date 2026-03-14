@@ -107,7 +107,10 @@ def convert_sample(raw: dict) -> dict | None:
     if audios:
         result["audios"] = audios
     if tools:
-        result["tools"] = tools
+        # Serialize as string to avoid pyarrow type conflicts across rows
+        # (e.g. default field being string in one row, number in another).
+        # ms-swift's template will auto-parse it back.
+        result["tools"] = json.dumps(tools, ensure_ascii=False)
     return result
 
 
@@ -142,7 +145,7 @@ def process_chunk(args: tuple) -> tuple:
 
 def main():
     parser = argparse.ArgumentParser(description="Preprocess Dolci-Instruct-SFT for ms-swift")
-    parser.add_argument("--split", choices=["train", "test"], default="train")
+    parser.add_argument("--split", choices=["train", "test"], default="test")
     parser.add_argument("--workers", type=int, default=128)
     parser.add_argument("--chunk-size", type=int, default=50000,
                         help="Number of lines per chunk for parallel processing")
