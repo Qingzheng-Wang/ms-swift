@@ -61,6 +61,8 @@ def convert_sample(raw: dict) -> dict | None:
         # Tool response: content is null, actual data is in tool_response field
         if role == 'tool':
             tool_content = tool_response or content or ''
+            if not isinstance(tool_content, str):
+                tool_content = json.dumps(tool_content, ensure_ascii=False)
             student_messages.append({'role': 'tool', 'content': tool_content})
             teacher_messages.append({'role': 'tool', 'content': tool_content})
             continue
