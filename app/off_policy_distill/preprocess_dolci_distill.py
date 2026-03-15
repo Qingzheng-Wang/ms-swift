@@ -127,8 +127,7 @@ def convert_sample(raw: dict) -> dict | None:
         result['teacher_messages'] = teacher_messages
         result['audios'] = audios
 
-    if tools:
-        result['tools'] = json.dumps(tools, ensure_ascii=False)
+    result['tools'] = json.dumps(tools, ensure_ascii=False) if tools else ''
 
     return result
 
