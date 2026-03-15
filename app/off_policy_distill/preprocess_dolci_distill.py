@@ -17,7 +17,7 @@ from multiprocessing import Pool
 from pathlib import Path
 
 INPUT_PATH = Path('/home/qingzhengw/voice-agent-data-engine/output/stage5/dolci_stage5.jsonl')
-INPUT_ROOT = Path('/home/qingzhengw/voice-agent-data-engine/output')
+INPUT_ROOT = Path('/home/qingzhengw/voice-agent-data-engine')
 OUTPUT_DIR = Path('data') / 'dolci_qingzheng_swift_format'
 
 
@@ -117,7 +117,7 @@ def convert_sample(raw: dict) -> dict | None:
     # SFT: messages + tools + audios
     sft = {
         'messages': student_messages,
-        'audios': audios if is_voice else [''],
+        'audios': audios if is_voice else [],
         'tools': tools_str,
     }
 
@@ -125,7 +125,7 @@ def convert_sample(raw: dict) -> dict | None:
     opd = {
         'messages': student_messages,
         'teacher_messages': teacher_messages,
-        'audios': audios if is_voice else [''],
+        'audios': audios if is_voice else [],
         'tools': tools_str,
     }
 
@@ -133,17 +133,24 @@ def convert_sample(raw: dict) -> dict | None:
 
 
 def process_chunk(args: tuple) -> tuple:
-    """Process a chunk of lines. Returns (sft_path, opd_path, kept, skipped)."""
+    """Process a chunk. Voice and text samples go to separate tmp files
+    so that voice samples (with non-empty audios) can be written first
+    during merge, ensuring HF datasets infers list<string> for audios."""
     chunk_idx, lines = args
     tmp_dir = OUTPUT_DIR / 'tmp'
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    sft_path = str(tmp_dir / f'sft_chunk_{chunk_idx}.jsonl')
-    opd_path = str(tmp_dir / f'opd_chunk_{chunk_idx}.jsonl')
+    sft_voice_path = str(tmp_dir / f'sft_voice_{chunk_idx}.jsonl')
+    sft_text_path = str(tmp_dir / f'sft_text_{chunk_idx}.jsonl')
+    opd_voice_path = str(tmp_dir / f'opd_voice_{chunk_idx}.jsonl')
+    opd_text_path = str(tmp_dir / f'opd_text_{chunk_idx}.jsonl')
 
-    kept = 0
+    voice_count = 0
+    text_count = 0
     skipped = 0
-    with open(sft_path, 'w', encoding='utf-8') as f_sft, \
-         open(opd_path, 'w', encoding='utf-8') as f_opd:
+    with open(sft_voice_path, 'w', encoding='utf-8') as f_sft_v, \
+         open(sft_text_path, 'w', encoding='utf-8') as f_sft_t, \
+         open(opd_voice_path, 'w', encoding='utf-8') as f_opd_v, \
+         open(opd_text_path, 'w', encoding='utf-8') as f_opd_t:
         for line in lines:
             line = line.strip()
             if not line:
@@ -160,11 +167,17 @@ def process_chunk(args: tuple) -> tuple:
                 continue
 
             sft, opd = result
-            f_sft.write(json.dumps(sft, ensure_ascii=False) + '\n')
-            f_opd.write(json.dumps(opd, ensure_ascii=False) + '\n')
-            kept += 1
+            if sft['audios']:  # voice sample
+                f_sft_v.write(json.dumps(sft, ensure_ascii=False) + '\n')
+                f_opd_v.write(json.dumps(opd, ensure_ascii=False) + '\n')
+                voice_count += 1
+            else:
+                f_sft_t.write(json.dumps(sft, ensure_ascii=False) + '\n')
+                f_opd_t.write(json.dumps(opd, ensure_ascii=False) + '\n')
+                text_count += 1
 
-    return sft_path, opd_path, kept, skipped
+    return (sft_voice_path, sft_text_path, opd_voice_path, opd_text_path,
+            voice_count, text_count, skipped)
 
 
 def main():
@@ -199,38 +212,44 @@ def main():
     del all_lines
 
     # Parallel processing
-    total_kept = 0
+    total_voice = 0
+    total_text = 0
     total_skipped = 0
-    sft_paths = []
-    opd_paths = []
+    sft_voice_paths = []
+    sft_text_paths = []
+    opd_voice_paths = []
+    opd_text_paths = []
 
     with Pool(processes=args.workers) as pool:
         for result in pool.imap(process_chunk, chunks):
-            sft_path, opd_path, kept, skipped = result
-            sft_paths.append(sft_path)
-            opd_paths.append(opd_path)
-            total_kept += kept
+            sft_vp, sft_tp, opd_vp, opd_tp, vc, tc, skipped = result
+            sft_voice_paths.append(sft_vp)
+            sft_text_paths.append(sft_tp)
+            opd_voice_paths.append(opd_vp)
+            opd_text_paths.append(opd_tp)
+            total_voice += vc
+            total_text += tc
             total_skipped += skipped
-            print(f'  Chunk done: +{kept} kept, +{skipped} skipped '
-                  f'(running total: {total_kept}/{total_kept + total_skipped})')
+            print(f'  Chunk done: voice +{vc}, text +{tc}, skipped +{skipped} '
+                  f'(running: voice={total_voice}, text={total_text})')
 
-    # Merge SFT chunks
+    def merge_files(out_path, path_lists):
+        """Merge tmp files into output. path_lists is a list of lists,
+        written in order (voice first, then text)."""
+        with open(out_path, 'w', encoding='utf-8') as fout:
+            for paths in path_lists:
+                for tmp_path in paths:
+                    with open(tmp_path, 'r', encoding='utf-8') as fin:
+                        for line in fin:
+                            fout.write(line)
+                    os.remove(tmp_path)
+
+    # Merge: voice samples first so HF datasets infers list<string> for audios
     print(f'Merging SFT chunks into {sft_output} ...')
-    with open(sft_output, 'w', encoding='utf-8') as fout:
-        for tmp_path in sft_paths:
-            with open(tmp_path, 'r', encoding='utf-8') as fin:
-                for line in fin:
-                    fout.write(line)
-            os.remove(tmp_path)
+    merge_files(sft_output, [sft_voice_paths, sft_text_paths])
 
-    # Merge OPD chunks
     print(f'Merging OPD chunks into {opd_output} ...')
-    with open(opd_output, 'w', encoding='utf-8') as fout:
-        for tmp_path in opd_paths:
-            with open(tmp_path, 'r', encoding='utf-8') as fin:
-                for line in fin:
-                    fout.write(line)
-            os.remove(tmp_path)
+    merge_files(opd_output, [opd_voice_paths, opd_text_paths])
 
     # Cleanup tmp dir
     tmp_dir = output_dir / 'tmp'
@@ -240,10 +259,13 @@ def main():
         except OSError:
             pass
 
+    total_kept = total_voice + total_text
     print(f'\nDone!')
     print(f'  Input:   {total}')
     print(f'  Kept:    {total_kept} ({total_kept / total * 100:.1f}%)')
     print(f'  Skipped: {total_skipped} ({total_skipped / total * 100:.1f}%)')
+    print(f'  Voice:   {total_voice}')
+    print(f'  Text:    {total_text}')
     print(f'  SFT:     {sft_output}')
     print(f'  OPD:     {opd_output}')
 
