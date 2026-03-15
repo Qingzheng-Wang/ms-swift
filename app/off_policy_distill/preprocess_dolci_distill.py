@@ -83,8 +83,8 @@ def convert_sample(raw: dict) -> dict | None:
             audio_path = str(INPUT_ROOT / audio_path)
             audios.append(audio_path)
 
-            # Teacher sees text version (prefer rewritten_query, fallback to content)
-            teacher_text = rewritten_query or content or ''
+            # Teacher sees text version: prefer original content
+            teacher_text = content or rewritten_query or ''
             teacher_messages.append({'role': 'user', 'content': teacher_text})
             continue
 
