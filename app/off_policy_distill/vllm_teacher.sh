@@ -31,8 +31,7 @@ echo "TP size: $TP_SIZE"
 echo "Model: $MODEL"
 echo "Started at: $(date)"
 
-python -m vllm.entrypoints.openai.api_server \
-    --model "$MODEL" \
+vllm serve "$MODEL" \
     --port "$PORT" \
     --max-logprobs 20 \
     --tensor-parallel-size "$TP_SIZE" \
