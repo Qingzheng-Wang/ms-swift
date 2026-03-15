@@ -376,7 +376,14 @@ class SftArguments(SwanlabArguments, TunerArguments, BaseArguments, Seq2SeqTrain
         os.makedirs(self.output_dir, exist_ok=True)
 
         if self.run_name is None:
-            self.run_name = self.output_dir
+            # e.g. .../qwen3-omni-dolci-lora/v6-20260314-171848 -> qwen3-omni-dolci-lora-v6
+            parts = os.path.normpath(self.output_dir).split(os.sep)
+            if len(parts) >= 2:
+                parent = parts[-2]
+                version = parts[-1].split('-')[0]
+                self.run_name = f'{parent}-{version}'
+            else:
+                self.run_name = self.output_dir
 
         self.training_args.output_dir = self.output_dir
         self.training_args.run_name = self.run_name
