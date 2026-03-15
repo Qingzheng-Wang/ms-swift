@@ -67,11 +67,15 @@ def convert_sample(raw: dict) -> dict | None:
             teacher_messages.append({'role': 'tool', 'content': tool_content})
             continue
 
-        # Assistant with function calls (tool call initiation)
+        # Assistant with function calls → emit as tool_call role messages
+        # ms-swift's _preprocess_function_call merges them into one assistant
+        # message with <tool_call> tags via hermes agent_template
         if role == 'assistant' and fc:
-            fc_content = fc if isinstance(fc, str) else json.dumps(fc, ensure_ascii=False)
-            student_messages.append({'role': 'assistant', 'content': fc_content})
-            teacher_messages.append({'role': 'assistant', 'content': fc_content})
+            fc_list = fc if isinstance(fc, list) else json.loads(fc) if isinstance(fc, str) else [fc]
+            for call in fc_list:
+                call_str = call if isinstance(call, str) else json.dumps(call, ensure_ascii=False)
+                student_messages.append({'role': 'tool_call', 'content': call_str})
+                teacher_messages.append({'role': 'tool_call', 'content': call_str})
             has_valid_assistant = True
             continue
 
@@ -97,25 +101,14 @@ def convert_sample(raw: dict) -> dict | None:
     if not has_valid_assistant:
         return None
 
-    # Merge consecutive tool responses into one
-    for msg_list in (student_messages, teacher_messages):
-        merged = []
-        for m in msg_list:
-            if m['role'] == 'tool' and merged and merged[-1]['role'] == 'tool':
-                merged[-1]['content'] += '\n' + m['content']
-            else:
-                merged.append(m)
-        msg_list.clear()
-        msg_list.extend(merged)
-
-    # Skip samples where tool follows non-assistant (missing tool-call)
+    # Skip samples where tool follows non-tool_call (missing tool-call)
     for j in range(len(student_messages)):
-        if student_messages[j]['role'] == 'tool' and (j == 0 or student_messages[j - 1]['role'] != 'assistant'):
+        if student_messages[j]['role'] == 'tool' and (j == 0 or student_messages[j - 1]['role'] not in ('tool_call', 'tool')):
             return None
 
-    # Verify assistant content is identical between student and teacher
-    student_assistant = [m['content'] for m in student_messages if m['role'] == 'assistant']
-    teacher_assistant = [m['content'] for m in teacher_messages if m['role'] == 'assistant']
+    # Verify assistant/tool_call content is identical between student and teacher
+    student_assistant = [m['content'] for m in student_messages if m['role'] in ('assistant', 'tool_call')]
+    teacher_assistant = [m['content'] for m in teacher_messages if m['role'] in ('assistant', 'tool_call')]
     if student_assistant != teacher_assistant:
         print(f'WARNING: assistant content mismatch for {sample_id}, skipping')
         return None
