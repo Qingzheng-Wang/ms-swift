@@ -1,11 +1,9 @@
 """
-Preprocess Dolci stage5 dataset for off-policy distillation (GKD).
+Preprocess Dolci stage5 dataset into two formats:
 
-Produces dual-format data:
-- messages: student view (audio samples use <audio> placeholder)
-- teacher_messages: teacher view (text-only, uses rewritten_query)
-
-For text-only samples, teacher_messages is omitted (GKD trainer falls back to standard flow).
+1. train_sft.jsonl — SFT format (messages + tools only, all samples)
+2. train_opd.jsonl — Off-policy distillation format (voice samples with
+   teacher_messages + audios; text samples have messages only)
 
 Usage:
     python preprocess_dolci_distill.py
@@ -113,26 +111,39 @@ def convert_sample(raw: dict) -> dict | None:
         print(f'WARNING: assistant content mismatch for {sample_id}, skipping')
         return None
 
-    result = {
+    tools_str = json.dumps(tools, ensure_ascii=False) if tools else ''
+    is_voice = data_type == 'voice' and bool(audios) # audios be non-empty
+
+    # SFT: messages + tools + audios
+    sft = {
         'messages': student_messages,
-        'teacher_messages': teacher_messages if data_type == 'voice' and audios else [],
-        'audios': audios if data_type == 'voice' and audios else [],
-        'tools': json.dumps(tools, ensure_ascii=False) if tools else '',
+        'audios': audios if is_voice else [''],
+        'tools': tools_str,
     }
 
-    return result
+    # OPD: + teacher_messages
+    opd = {
+        'messages': student_messages,
+        'teacher_messages': teacher_messages,
+        'audios': audios if is_voice else [''],
+        'tools': tools_str,
+    }
+
+    return sft, opd
 
 
 def process_chunk(args: tuple) -> tuple:
-    """Process a chunk of lines. Returns (output_path, kept_count, skipped_count)."""
+    """Process a chunk of lines. Returns (sft_path, opd_path, kept, skipped)."""
     chunk_idx, lines = args
     tmp_dir = OUTPUT_DIR / 'tmp'
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    tmp_path = str(tmp_dir / f'dolci_gkd_chunk_{chunk_idx}.jsonl')
+    sft_path = str(tmp_dir / f'sft_chunk_{chunk_idx}.jsonl')
+    opd_path = str(tmp_dir / f'opd_chunk_{chunk_idx}.jsonl')
 
     kept = 0
     skipped = 0
-    with open(tmp_path, 'w', encoding='utf-8') as fout:
+    with open(sft_path, 'w', encoding='utf-8') as f_sft, \
+         open(opd_path, 'w', encoding='utf-8') as f_opd:
         for line in lines:
             line = line.strip()
             if not line:
@@ -143,15 +154,17 @@ def process_chunk(args: tuple) -> tuple:
                 skipped += 1
                 continue
 
-            converted = convert_sample(raw)
-            if converted is None:
+            result = convert_sample(raw)
+            if result is None:
                 skipped += 1
                 continue
 
-            fout.write(json.dumps(converted, ensure_ascii=False) + '\n')
+            sft, opd = result
+            f_sft.write(json.dumps(sft, ensure_ascii=False) + '\n')
+            f_opd.write(json.dumps(opd, ensure_ascii=False) + '\n')
             kept += 1
 
-    return tmp_path, kept, skipped
+    return sft_path, opd_path, kept, skipped
 
 
 def main():
@@ -168,7 +181,8 @@ def main():
     input_path = Path(args.input)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / 'train.jsonl'
+    sft_output = output_dir / 'train_sft.jsonl'
+    opd_output = output_dir / 'train_opd.jsonl'
 
     print(f'Reading {input_path} ...')
     with open(input_path, 'r', encoding='utf-8') as f:
@@ -187,44 +201,51 @@ def main():
     # Parallel processing
     total_kept = 0
     total_skipped = 0
-    tmp_paths = []
+    sft_paths = []
+    opd_paths = []
 
     with Pool(processes=args.workers) as pool:
         for result in pool.imap(process_chunk, chunks):
-            tmp_path, kept, skipped = result
-            tmp_paths.append(tmp_path)
+            sft_path, opd_path, kept, skipped = result
+            sft_paths.append(sft_path)
+            opd_paths.append(opd_path)
             total_kept += kept
             total_skipped += skipped
             print(f'  Chunk done: +{kept} kept, +{skipped} skipped '
                   f'(running total: {total_kept}/{total_kept + total_skipped})')
 
-    # Merge chunks
-    print(f'Merging {len(tmp_paths)} chunks into {output_path} ...')
-    with open(output_path, 'w', encoding='utf-8') as fout:
-        for tmp_path in tmp_paths:
+    # Merge SFT chunks
+    print(f'Merging SFT chunks into {sft_output} ...')
+    with open(sft_output, 'w', encoding='utf-8') as fout:
+        for tmp_path in sft_paths:
             with open(tmp_path, 'r', encoding='utf-8') as fin:
                 for line in fin:
                     fout.write(line)
             os.remove(tmp_path)
 
-    # Count voice vs text samples
-    voice_count = 0
-    text_count = 0
-    with open(output_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            sample = json.loads(line)
-            if 'teacher_messages' in sample:
-                voice_count += 1
-            else:
-                text_count += 1
+    # Merge OPD chunks
+    print(f'Merging OPD chunks into {opd_output} ...')
+    with open(opd_output, 'w', encoding='utf-8') as fout:
+        for tmp_path in opd_paths:
+            with open(tmp_path, 'r', encoding='utf-8') as fin:
+                for line in fin:
+                    fout.write(line)
+            os.remove(tmp_path)
+
+    # Cleanup tmp dir
+    tmp_dir = output_dir / 'tmp'
+    if tmp_dir.exists():
+        try:
+            tmp_dir.rmdir()
+        except OSError:
+            pass
 
     print(f'\nDone!')
     print(f'  Input:   {total}')
     print(f'  Kept:    {total_kept} ({total_kept / total * 100:.1f}%)')
     print(f'  Skipped: {total_skipped} ({total_skipped / total * 100:.1f}%)')
-    print(f'  Voice:   {voice_count}')
-    print(f'  Text:    {text_count}')
-    print(f'  Output:  {output_path}')
+    print(f'  SFT:     {sft_output}')
+    print(f'  OPD:     {opd_output}')
 
 
 if __name__ == '__main__':
