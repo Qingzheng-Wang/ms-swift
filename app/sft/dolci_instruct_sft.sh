@@ -10,12 +10,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWIFT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$SWIFT_ROOT"
 
-CONFIG_YAML="${SCRIPT_DIR}/dolci_instruct_sft.yaml"
+config_name="dolci_instruct_sft_qingzheng"
+CONFIG_YAML="${SCRIPT_DIR}/${config_name}.yaml"
 
 # Job parameters
-config_name="dolci_instruct_sft"
 ngpu=${1:-8}
-nodes=${2:-2}
+nodes=${2:-4}
 wall_time=${3:-96:00:00}
 partition=${4:-"gpu"}
 
