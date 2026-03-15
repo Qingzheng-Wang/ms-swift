@@ -9,8 +9,8 @@
 #SBATCH --exclusive
 #SBATCH --time=7-00:00:00
 #SBATCH --partition=gpu
-#SBATCH --output=results/off_policy_distill/logs/vllm_teacher_%j.out
-#SBATCH --error=results/off_policy_distill/logs/vllm_teacher_%j.err
+#SBATCH --output=/home/qingzhengw/ms-swift/results/off_policy_distill/logs/vllm_teacher_%j.out
+#SBATCH --error=/home/qingzhengw/ms-swift/results/off_policy_distill/logs/vllm_teacher_%j.err
 
 set -e
 
@@ -20,11 +20,11 @@ conda activate ~/miniconda3/envs/ms-swift
 # Avoid cuBLAS version mismatch
 unset LD_LIBRARY_PATH
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SWIFT_ROOT="/home/qingzhengw/ms-swift"
 config_name="off_policy_distill"
-CONFIG_YAML="${SCRIPT_DIR}/${config_name}.yaml"
+CONFIG_YAML="${SWIFT_ROOT}/app/${config_name}/${config_name}.yaml"
 
-PORT=${1:-8000}
+PORT=${1:-8848}
 TP_SIZE=${2:-8}
 MODEL="Qwen/Qwen3-235B-A22B-Instruct-2507"
 
