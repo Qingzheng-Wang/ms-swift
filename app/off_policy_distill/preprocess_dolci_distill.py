@@ -113,14 +113,12 @@ def convert_sample(raw: dict) -> dict | None:
         print(f'WARNING: assistant content mismatch for {sample_id}, skipping')
         return None
 
-    result = {'messages': student_messages}
-
-    # Only add teacher_messages for voice samples (text samples use same input for both)
-    if data_type == 'voice' and audios:
-        result['teacher_messages'] = teacher_messages
-        result['audios'] = audios
-
-    result['tools'] = json.dumps(tools, ensure_ascii=False) if tools else ''
+    result = {
+        'messages': student_messages,
+        'teacher_messages': teacher_messages if data_type == 'voice' and audios else [],
+        'audios': audios if data_type == 'voice' and audios else [],
+        'tools': json.dumps(tools, ensure_ascii=False) if tools else '',
+    }
 
     return result
 
