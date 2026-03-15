@@ -19,7 +19,8 @@ from multiprocessing import Pool
 from pathlib import Path
 
 INPUT_PATH = Path('/home/qingzhengw/voice-agent-data-engine/output/stage5/dolci_stage5.jsonl')
-OUTPUT_DIR = Path('data') / 'dolci_gkd_swift_format'
+INPUT_ROOT = Path('/home/qingzhengw/voice-agent-data-engine/output')
+OUTPUT_DIR = Path('data') / 'dolci_qingzheng_swift_format'
 
 
 def convert_sample(raw: dict) -> dict | None:
@@ -54,12 +55,12 @@ def convert_sample(raw: dict) -> dict | None:
         tool_response = turn.get('tool_response')
 
         # Skip unknown roles
-        if role not in ('user', 'assistant', 'system', 'environment'):
+        if role not in ('user', 'assistant', 'system', 'tool'):
             continue
 
-        # Environment → tool role
-        if role == 'environment':
-            tool_content = tool_response if tool_response else (content or '')
+        # Tool response: content is null, actual data is in tool_response field
+        if role == 'tool':
+            tool_content = tool_response or content or ''
             student_messages.append({'role': 'tool', 'content': tool_content})
             teacher_messages.append({'role': 'tool', 'content': tool_content})
             continue
@@ -79,6 +80,7 @@ def convert_sample(raw: dict) -> dict | None:
         if role == 'user' and data_type == 'voice' and audio_path:
             # Student sees <audio>
             student_messages.append({'role': 'user', 'content': '<audio>'})
+            audio_path = str(INPUT_ROOT / audio_path)
             audios.append(audio_path)
 
             # Teacher sees text version (prefer rewritten_query, fallback to content)
