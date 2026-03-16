@@ -36,7 +36,6 @@ python tools/slurm/stool.py \
     --project ${config_name} \
     --time $wall_time \
     --partition $partition \
-    --no-auto-inject-cmd \
     --cmd "-m swift.cli.sft --config ${CONFIG_YAML} ${RESUME_ARG}" \
     --submit \
     --conda-script ~/miniconda3/etc/profile.d/conda.sh \
