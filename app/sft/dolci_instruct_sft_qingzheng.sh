@@ -1,6 +1,6 @@
 #!/bin/bash
-# Dolci Instruct SFT - SLURM 提交脚本 (6 nodes × 8 H200)
-# 使用 flash-fish 的 stool.py 提交到 SLURM
+# Dolci Instruct SFT - SLURM 提交脚本
+# 使用 stool.py 提交到 SLURM
 
 # Load conda environment
 source ~/miniconda3/etc/profile.d/conda.sh
@@ -13,8 +13,11 @@ cd "$SWIFT_ROOT"
 config_name="dolci_instruct_sft_qingzheng"
 CONFIG_YAML="${SCRIPT_DIR}/${config_name}.yaml"
 
-# Auto-resume: find the latest checkpoint in output_dir
+# Ensure output dir exists (so stool.py can create symlink)
 OUTPUT_DIR="${SWIFT_ROOT}/output/qwen3-omni-dolci-lora-qingzheng"
+mkdir -p "${OUTPUT_DIR}"
+
+# Auto-resume: find the latest checkpoint in output_dir
 RESUME_ARG=""
 LAST_CKPT=$(ls -dt "${OUTPUT_DIR}"/checkpoint-* 2>/dev/null | head -1)
 if [ -n "$LAST_CKPT" ]; then
