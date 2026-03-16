@@ -193,11 +193,7 @@ class SftArguments(SwanlabArguments, TunerArguments, BaseArguments, Seq2SeqTrain
                                  'Please use one of: "flash_attn", "flash_attention_2", "flash_attention_3".')
 
     def __post_init__(self) -> None:
-        # Handle resume_from_checkpoint: 'true'/'True' means auto-find last checkpoint.
-        # We store the flag and resolve it after output_dir is finalized.
-        self._resume_auto = (isinstance(self.resume_from_checkpoint, str)
-                             and self.resume_from_checkpoint.lower() == 'true')
-        if self.resume_from_checkpoint and not self._resume_auto:
+        if self.resume_from_checkpoint:
             self.resume_from_checkpoint = to_abspath(self.resume_from_checkpoint, True)
             # The non-resume_only_model will have its weights loaded in the trainer.
             if self.resume_only_model:
@@ -205,8 +201,6 @@ class SftArguments(SwanlabArguments, TunerArguments, BaseArguments, Seq2SeqTrain
                     self.model = self.resume_from_checkpoint
                 else:
                     self.adapters = [self.resume_from_checkpoint]
-        elif self._resume_auto:
-            self.resume_from_checkpoint = None  # Clear for now, resolve later
         BaseArguments.__post_init__(self)
         self._init_override()
         TunerArguments.__post_init__(self)
@@ -234,7 +228,6 @@ class SftArguments(SwanlabArguments, TunerArguments, BaseArguments, Seq2SeqTrain
         self.training_args = TrainerFactory.get_training_args(self)
         self.training_args.remove_unused_columns = False
         self._add_version()
-        self._resolve_resume_auto()
 
         if 'swanlab' in self.report_to:
             self._init_swanlab()
@@ -395,25 +388,6 @@ class SftArguments(SwanlabArguments, TunerArguments, BaseArguments, Seq2SeqTrain
         self.training_args.output_dir = self.output_dir
         self.training_args.run_name = self.run_name
         self.training_args.logging_dir = self.logging_dir
-
-    def _resolve_resume_auto(self):
-        """When resume_from_checkpoint was set to 'true', auto-find the last checkpoint in output_dir."""
-        if not getattr(self, '_resume_auto', False):
-            return
-        from transformers.trainer_utils import get_last_checkpoint
-        last_ckpt = get_last_checkpoint(self.output_dir)
-        if last_ckpt is not None:
-            self.resume_from_checkpoint = last_ckpt
-            self.training_args.resume_from_checkpoint = last_ckpt
-            logger.info(f'Auto-resume: found last checkpoint at {last_ckpt}')
-            if self.resume_only_model:
-                if self.tuner_type == 'full':
-                    self.model = self.resume_from_checkpoint
-                else:
-                    self.adapters = [self.resume_from_checkpoint]
-        else:
-            self.resume_from_checkpoint = None
-            logger.info('Auto-resume: no checkpoint found in output_dir, training from scratch.')
 
     def _init_output_dir(self):
         if self.output_dir is None:
