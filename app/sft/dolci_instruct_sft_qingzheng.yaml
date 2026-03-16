@@ -2,7 +2,7 @@
 
 # Logging
 report_to: wandb
-run_name: qwen3-omni-dolci-lora-qingzheng
+run_name: dolci_instruct_sft_qingzheng
 
 # Model
 model: Qwen/Qwen3-Omni-30B-A3B-Instruct
@@ -39,7 +39,7 @@ learning_rate: 5e-5
 warmup_ratio: 0.05
 max_grad_norm: 1.0
 gradient_checkpointing: true
-padding_free: true  # padding_free causes NCCL timeout with multimodal audio data
+padding_free: true
 weight_decay: 0.01
 adam_beta2: 0.999
 
@@ -50,13 +50,13 @@ experts_impl: grouped_mm  # DISABLED: suspected hang with ZeRO-3
 # Logging & Saving
 eval_strategy: "no"
 # eval_steps: 1000
-save_steps: 10
+save_steps: 1000
 save_total_limit: 3
 logging_steps: 10
 
 # Misc
 max_length: 32768
-output_dir: output/qwen3-omni-dolci-lora-qingzheng
+output_dir: /home/qingzhengw/ms-swift/results/dolci_instruct_sft_qingzheng/output
 deepspeed: zero2
 
 add_version: false

@@ -1,52 +1,8 @@
 import json
-import shutil
 import subprocess
 from pathlib import Path
 
 import click
-
-
-def copy_dir(input_dir: str, output_dir: str) -> None:
-    print(f"Copying : {input_dir}\n" f"to      : {output_dir} ...")
-    input_path = Path(input_dir)
-    output_path = Path(output_dir)
-    assert input_path.is_dir(), f"{input_dir} is not a directory"
-    assert output_path.is_dir(), f"{output_dir} is not a directory"
-
-    # Create softlinks for special directories
-    special_dirs = ["results", "data", "checkpoints", "output"]
-    for dir_name in special_dirs:
-        src_dir = input_path / dir_name
-        dst_dir = output_path / dir_name
-        if src_dir.exists():
-            # Remove existing link/directory if it exists
-            if dst_dir.exists():
-                if dst_dir.is_symlink():
-                    dst_dir.unlink()
-                else:
-                    shutil.rmtree(dst_dir)
-
-            # Create softlink
-            dst_dir.symlink_to(src_dir.resolve(), target_is_directory=True)
-            print(f"Created softlink for {dir_name}: {src_dir} -> {dst_dir}")
-
-    exclude_dirs = " ".join(f"--exclude='{d}'" for d in special_dirs)
-    rsync_cmd = (
-        f"rsync -arm "
-        f"{exclude_dirs} "
-        f"--include='*/' "
-        f"--include='*.py' "
-        f"--include='*.json' "
-        f"--include='*.yaml' "
-        f"--include='*.cfg' "
-        f"--include='*.txt' "
-        f"--include='*.sh' "
-        f"--exclude='*' "
-        f"{input_dir}/ {output_dir}"
-    )
-    print(f"Copying command: {rsync_cmd}")
-    subprocess.check_call(rsync_cmd, shell=True)
-    print("Copy done.")
 
 
 @click.command()
@@ -74,11 +30,6 @@ def copy_dir(input_dir: str, output_dir: str) -> None:
     type=click.Path(),
     help="Additional shell commands to inject before the main command",
 )
-@click.option(
-    "--auto-inject-cmd/--no-auto-inject-cmd",
-    default=False,
-    help="Automatically inject Hydra-style project/run_dir/num_nodes into the command",
-)
 def main(
     nodes,
     ngpu,
@@ -93,9 +44,10 @@ def main(
     conda_env,
     envs,
     inject_shell,
-    auto_inject_cmd,
 ):
     """SLURM job submission tool"""
+    project_root = Path.cwd().resolve()
+
     # Create base directory
     base_dir = Path(f"results/{project}")
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -119,11 +71,6 @@ def main(
     # Create logs directory
     (base_dir / "logs").mkdir(exist_ok=True)
 
-    # Copy code directory
-    code_dir = base_dir / "code"
-    code_dir.mkdir(exist_ok=True)
-    copy_dir(".", str(code_dir))
-
     # Generate submit.sh
     if inject_shell is None:
         inject_shell = ""
@@ -133,12 +80,13 @@ def main(
 
     generate_submit_script(
         base_dir, nodes, ngpu,
-        project, qos, partition, time, mem, conda_script, conda_env, envs
+        project, qos, partition, time, mem, conda_script, conda_env, envs,
+        project_root
     )
 
     # Generate run.sh
     generate_run_script(
-        base_dir, nodes, ngpu, cmd, project, inject_shell, auto_inject_cmd
+        base_dir, ngpu, cmd, project_root, inject_shell
     )
 
     print(f"Job structure created at: {base_dir}")
@@ -156,7 +104,7 @@ def main(
         print(f"To submit the job, run: sbatch {base_dir}/submit.sh")
 
 
-def generate_submit_script(base_dir, nodes, ngpu, project, qos, partition, time, mem, conda_script, conda_env, envs):
+def generate_submit_script(base_dir, nodes, ngpu, project, qos, partition, time, mem, conda_script, conda_env, envs, project_root):
     expose_envs = "\n".join([f"export {env}" for env in envs])
 
     # Determine resource allocation
@@ -238,7 +186,7 @@ echo "Environment variables:"
 env | sort
 echo ""
 
-cd {base_dir}
+cd {project_root}
 
 # Fix SLURM env variable conflicts inherited from global defaults
 unset SLURM_MEM_PER_CPU
@@ -257,14 +205,8 @@ srun --ntasks-per-node=1 \\
 
 
 def generate_run_script(
-    base_dir, nodes, ngpu, cmd, project, inject_shell, auto_inject_cmd
+    base_dir, ngpu, cmd, project_root, inject_shell
 ):
-    # Resolve base_dir as run_dir
-    cmd_with_overrides = (
-        (f"{cmd} project={project} paths.run_dir={base_dir} trainer.num_nodes={nodes}")
-        if auto_inject_cmd
-        else cmd
-    )
     run_content = f"""#!/bin/bash
 set -e
 
@@ -285,7 +227,7 @@ else
     exit 1
 fi
 
-cd {base_dir}/code
+cd {project_root}
 
 echo "Testing distributed communication..."
 torchrun \\
@@ -304,7 +246,7 @@ torchrun \\
     --node_rank=$SLURM_NODEID \\
     --master_addr=$MASTER_ADDR \\
     --master_port=$MASTER_PORT \\
-    {cmd_with_overrides}
+    {cmd}
 """
     run_path = base_dir / "run.sh"
     with open(run_path, "w") as f:

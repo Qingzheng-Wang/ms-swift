@@ -13,8 +13,8 @@ cd "$SWIFT_ROOT"
 config_name="dolci_instruct_sft_qingzheng"
 CONFIG_YAML="${SCRIPT_DIR}/${config_name}.yaml"
 
-# Ensure output dir exists (so stool.py can create symlink)
-OUTPUT_DIR="${SWIFT_ROOT}/output/qwen3-omni-dolci-lora-qingzheng"
+# Ensure output dir exists (for auto-resume checkpoint detection)
+OUTPUT_DIR="${SWIFT_ROOT}/results/${config_name}/output"
 mkdir -p "${OUTPUT_DIR}"
 
 # Auto-resume: find the latest checkpoint in output_dir
