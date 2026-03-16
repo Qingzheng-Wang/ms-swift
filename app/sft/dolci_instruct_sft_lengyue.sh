@@ -1,6 +1,6 @@
 #!/bin/bash
-# Off-Policy Distillation (GKD) - SLURM launch script
-# Uses flash-fish stool.py for multi-node submission
+# Dolci Instruct SFT - SLURM 提交脚本 (6 nodes × 8 H200)
+# 使用 flash-fish 的 stool.py 提交到 SLURM
 
 # Load conda environment
 source ~/miniconda3/etc/profile.d/conda.sh
@@ -10,23 +10,23 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWIFT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$SWIFT_ROOT"
 
-config_name="off_policy_distill"
+config_name="dolci_instruct_sft_lengyue"
 CONFIG_YAML="${SCRIPT_DIR}/${config_name}.yaml"
 
 # Job parameters
 ngpu=${1:-8}
-nodes=${2:-3}
+nodes=${2:-2}
 wall_time=${3:-96:00:00}
 partition=${4:-"gpu"}
 
 python tools/slurm/stool.py \
     --nodes $nodes \
     --ngpu $ngpu \
-    --project ${config_name} \
+    --project "dolci_instruct_sft" \
     --time $wall_time \
     --partition $partition \
     --no-auto-inject-cmd \
-    --cmd "-m swift.cli.rlhf --config ${CONFIG_YAML}" \
+    --cmd "-m swift.cli.sft --config ${CONFIG_YAML}" \
     --submit \
     --conda-script ~/miniconda3/etc/profile.d/conda.sh \
     --conda-env ~/miniconda3/envs/ms-swift \

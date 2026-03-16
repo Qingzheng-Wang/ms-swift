@@ -1,29 +1,19 @@
-# Off-Policy Distillation (GKD) config
-# Command: swift rlhf --config app/off_policy_distill/off_policy_distill.yaml
+# Dolci Instruct SFT config (6 nodes × 8 H200)
 
-rlhf_type: gkd
+# Logging
 report_to: wandb
 
-# Student model
+# Model
 model: Qwen/Qwen3-Omni-30B-A3B-Instruct
 torch_dtype: bfloat16
 seed: 2026
 
-# Teacher (external vLLM API)
-teacher_model_server: "http://localhost:8848"
-gkd_logits_topk: 20
-
-# GKD hyperparameters
-lmbda: 0            # pure off-policy (use dataset responses)
-seq_kd: false
-beta: 0.5           # JSD divergence
-temperature: 0.9
-
 # System prompt
 system: "You are a helpful AI assistant that can understand audio and respond in text."
 
-# Dataset (preprocessed with preprocess_dolci_distill.py)
-dataset: /home/qingzhengw/ms-swift/data/dolci_qingzheng_swift_format/train_opd.jsonl
+# Dataset
+dataset: data/dolci_instruct_sft_swift_format/train.jsonl
+# val_dataset: data/dolci_instruct_sft_swift_format/test.jsonl
 load_from_cache_file: true
 dataset_num_proc: 4
 dataloader_num_workers: 4
@@ -39,15 +29,16 @@ target_modules: all-linear
 freeze_vit: true
 freeze_aligner: true
 
-# Training
+# Training (6 nodes × 8 GPUs = 48 devices)
 num_train_epochs: 2
 per_device_train_batch_size: 4
-gradient_accumulation_steps: 2
+# per_device_eval_batch_size: 8
+gradient_accumulation_steps: 1
 learning_rate: 5e-5
 warmup_ratio: 0.05
 max_grad_norm: 1.0
 gradient_checkpointing: true
-padding_free: false     # disabled for dual-input alignment simplicity
+padding_free: true
 weight_decay: 0.01
 adam_beta2: 0.999
 
@@ -57,14 +48,15 @@ experts_impl: grouped_mm
 
 # Logging & Saving
 eval_strategy: "no"
-save_steps: 500
+# eval_steps: 1000
+save_steps: 1000
 save_total_limit: 3
 logging_steps: 10
 
-# Lengths
+# Misc
 max_length: 32768
-max_completion_length: 4096
-
-# Output
-output_dir: output/qwen3-omni-dolci-gkd-lora
+output_dir: output/qwen3-omni-dolci-lora
+add_version: false
+# TODO: after first successful run, change to `resume_from_checkpoint: true`
+resume_from_checkpoint: /home/qingzhengw/ms-swift/results/dolci_instruct_sft/code/output/qwen3-omni-dolci-lora/v6-20260314-171848/checkpoint-18000
 deepspeed: zero3

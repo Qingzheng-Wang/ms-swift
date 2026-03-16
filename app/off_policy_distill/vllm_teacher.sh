@@ -14,11 +14,18 @@
 
 set -e
 
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate ~/miniconda3/envs/ms-swift
+# Activate uv environment (do NOT unset LD_LIBRARY_PATH - gpu nodes need it for libcudart)
+source /home/qingzhengw/ms-swift/.venv/bin/activate
 
-# Avoid cuBLAS version mismatch
-unset LD_LIBRARY_PATH
+# Fix nvcc permission on gpu nodes: copy to writable location with +x
+# NVCC_ORIG=$(which nvcc 2>/dev/null || find /usr/local/cuda/bin -name nvcc 2>/dev/null | head -1)
+# if [ -n "$NVCC_ORIG" ] && [ ! -x "$NVCC_ORIG" ]; then
+#     mkdir -p /tmp/nvcc_fix
+#     cp "$NVCC_ORIG" /tmp/nvcc_fix/nvcc
+#     chmod +x /tmp/nvcc_fix/nvcc
+#     export PATH="/tmp/nvcc_fix:$PATH"
+#     echo "Fixed nvcc permission: copied $NVCC_ORIG to /tmp/nvcc_fix/nvcc"
+# fi
 
 SWIFT_ROOT="/home/qingzhengw/ms-swift"
 config_name="off_policy_distill"
@@ -49,3 +56,9 @@ vllm serve "$MODEL" \
     --max-logprobs "$MAX_LOGPROBS" \
     --tensor-parallel-size "$TP_SIZE" \
     --trust-remote-code
+
+# vllm serve "Qwen/Qwen3-235B-A22B-Instruct-2507" \
+#     --port "8848" \
+#     --max-logprobs "20" \
+#     --tensor-parallel-size "8" \
+#     --trust-remote-code
