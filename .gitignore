@@ -155,3 +155,4 @@ megatron_output/
 ast_index_file.py
 
 .backup/*
+results/*
