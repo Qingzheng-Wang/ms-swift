@@ -34,15 +34,13 @@ def copy_dir(input_dir: str, output_dir: str) -> None:
     rsync_cmd = (
         f"rsync -arm "
         f"{exclude_dirs} "
-        f"--include='swift/***' "
-        f"--include='app/***' "
-        f"--include='tools/***' "
-        f"--include='examples/***' "
+        f"--include='*/' "
         f"--include='*.py' "
         f"--include='*.json' "
         f"--include='*.yaml' "
         f"--include='*.cfg' "
         f"--include='*.txt' "
+        f"--include='*.sh' "
         f"--exclude='*' "
         f"{input_dir}/ {output_dir}"
     )
