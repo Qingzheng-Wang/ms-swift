@@ -39,7 +39,7 @@ learning_rate: 5e-5
 warmup_ratio: 0.05
 max_grad_norm: 1.0
 gradient_checkpointing: true
-padding_free: true
+padding_free: true # if true, pack batch samples into one sequence
 weight_decay: 0.01
 adam_beta2: 0.999
 
